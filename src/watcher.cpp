@@ -46,9 +46,14 @@ static mrb_value mrb_button_event_pin(mrb_state *mrb, mrb_value self){
   return mrb_fixnum_value(event->pin);
 }
 
-static mrb_value mrb_button_event_pressed(mrb_state *mrb, mrb_value self){
+static mrb_value mrb_button_event_pressed_p(mrb_state *mrb, mrb_value self){
   ButtonEvent *event = (ButtonEvent*)DATA_PTR(self);
   return mrb_bool_value(event->pressed);
+}
+
+static mrb_value mrb_button_event_released_p(mrb_state *mrb, mrb_value self){
+  ButtonEvent *event = (ButtonEvent*)DATA_PTR(self);
+  return mrb_bool_value(!event->pressed);
 }
 
 
@@ -235,7 +240,8 @@ mrb_mruby_m5stack_button_watcher_gem_init(mrb_state *mrb)
 
   mrb_define_method(mrb, ButtonEventClass, "when", mrb_button_event_when, MRB_ARGS_NONE());
   mrb_define_method(mrb, ButtonEventClass, "last_change", mrb_button_event_last_change, MRB_ARGS_NONE());
-  mrb_define_method(mrb, ButtonEventClass, "pressed", mrb_button_event_pressed, MRB_ARGS_NONE());
+  mrb_define_method(mrb, ButtonEventClass, "pressed?", mrb_button_event_pressed_p, MRB_ARGS_NONE());
+  mrb_define_method(mrb, ButtonEventClass, "released?", mrb_button_event_released_p, MRB_ARGS_NONE());
   mrb_define_method(mrb, ButtonEventClass, "pin", mrb_button_event_pin, MRB_ARGS_NONE());
 
 }
