@@ -22,6 +22,7 @@ typedef struct ButtonEvent {
 } ButtonEvent;
 
 static struct RClass* ButtonEventClass = NULL;
+QueueHandle_t interruptQueue=NULL;
 
 typedef struct WatcherContext {
   QueueHandle_t queue; /* where button events get sent */
@@ -99,6 +100,7 @@ static const struct mrb_data_type button_event_type = {
 static void button_watcher_event_task(void *params){
   WatcherContext *context = (WatcherContext*)params;
   while(1) {
+    xQueueReceive(interruptQueue, NULL, 0);
     for(int i=0; i < context->button_count; i++){
       Button *button = context->buttons[i];
       button->read();
@@ -113,8 +115,12 @@ static void button_watcher_event_task(void *params){
         xQueueSendToBack(context->queue, &ev, 10);
       }
     }
-    vTaskDelay(10/portTICK_PERIOD_MS);
   }
+}
+
+void ICACHE_RAM_ATTR buttonPressed(){
+  BaseType_t xHigherPrioritTaskWoken;
+  xQueueSendToFrontFromISR(interruptQueue, NULL, &xHigherPrioritTaskWoken);
 }
 
 /* start the task that will start polling the button pins*/
@@ -125,6 +131,10 @@ static mrb_value mrb_button_watcher_start(mrb_state *mrb, mrb_value self){
     if(!context->task){
       mrb_raise(mrb, E_RUNTIME_ERROR, "Failed to start watcher task");
     }
+
+    for(int i=0; i < context->button_count; i++){
+      attachInterrupt(digitalPinToInterrupt(context->pins[i]), buttonPressed, CHANGE);
+    }
   }
   return mrb_nil_value();
 }
@@ -132,9 +142,13 @@ static mrb_value mrb_button_watcher_start(mrb_state *mrb, mrb_value self){
 /* stop the task polls pins*/
 static mrb_value mrb_button_watcher_stop(mrb_state *mrb, mrb_value self){
   WatcherContext *context = (WatcherContext*)DATA_PTR(self);
+ 
   if(context->task){
     vTaskDelete(context->task);
     context->task = NULL;
+    for(int i=0; i < context->button_count; i++){
+      detachInterrupt(digitalPinToInterrupt(context->pins[i])); 
+    }
   }
   return mrb_nil_value();
 }
@@ -206,7 +220,7 @@ static mrb_value mrb_button_watcher_init(mrb_state *mrb, mrb_value self){
     context->buttons[i] = new Button(context->pins[i], true, debounce_ms);
   }
 
-  context->queue = xQueueCreate(10, sizeof(ButtonEvent));
+  context->queue = xQueueCreate(5, sizeof(ButtonEvent));
 
   if(!context->queue) {
     mrb_raise(mrb, E_RUNTIME_ERROR, "Failed to allocate queue.");
@@ -244,11 +258,16 @@ mrb_mruby_m5stack_button_watcher_gem_init(mrb_state *mrb)
   mrb_define_method(mrb, ButtonEventClass, "released?", mrb_button_event_released_p, MRB_ARGS_NONE());
   mrb_define_method(mrb, ButtonEventClass, "pin", mrb_button_event_pin, MRB_ARGS_NONE());
 
+  interruptQueue = xQueueCreate(5, 0);
 }
 
 void
 mrb_mruby_m5stack_button_watcher_gem_final(mrb_state *mrb)
 {
+  if(interruptQueue){
+    vQueueDelete(interruptQueue);
+    interruptQueue=NULL;
+  }
 }
 
 
